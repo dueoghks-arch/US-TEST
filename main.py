@@ -41,13 +41,14 @@ for ticker in TICKERS:
         print(f"{ticker} 분석 중 오류 발생: {e}")
 
 # 2. 이메일 발송 로직
-EMAIL_SENDER = os.environ.get("EMAIL_SENDER")
-EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD") # 구글 앱 비밀번호
+# 요청하신 변수명으로 수정 (EMAIL_USER, EMAIL_PASS)
+EMAIL_USER = os.environ.get("EMAIL_USER")
+EMAIL_PASS = os.environ.get("EMAIL_PASS") # 구글 앱 비밀번호
 EMAIL_RECEIVER = "dueoghks@gmail.com"
 
 # 환경변수 누락 확인
-if not EMAIL_SENDER or not EMAIL_PASSWORD:
-    print("경고: 환경변수(EMAIL_SENDER, EMAIL_PASSWORD)가 설정되지 않았습니다.")
+if not EMAIL_USER or not EMAIL_PASS:
+    print("경고: 환경변수(EMAIL_USER, EMAIL_PASS)가 설정되지 않았습니다.")
 
 if selected_stocks:
     body = f"<h3>최근 4주 내 30주봉 돌파 종목 리스트</h3><p>{', '.join(selected_stocks)}</p>"
@@ -55,7 +56,7 @@ else:
     body = "<h3>최근 4주 내 30주봉을 돌파한 종목이 없습니다.</h3>"
 
 msg = MIMEMultipart()
-msg['From'] = str(EMAIL_SENDER)
+msg['From'] = str(EMAIL_USER)
 msg['To'] = EMAIL_RECEIVER
 msg['Subject'] = f"[{datetime.date.today()}] 조건 선별 주식 리스트 알림"
 msg.attach(MIMEText(body, 'html'))
@@ -63,8 +64,8 @@ msg.attach(MIMEText(body, 'html'))
 try:
     server = smtplib.SMTP('smtp.gmail.com', 587)
     server.starttls()
-    server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-    server.sendmail(EMAIL_SENDER, EMAIL_RECEIVER, msg.as_string())
+    server.login(EMAIL_USER, EMAIL_PASS)
+    server.sendmail(EMAIL_USER, EMAIL_RECEIVER, msg.as_string())
     server.quit()
     print("이메일 발송 완료!")
 except Exception as e:
