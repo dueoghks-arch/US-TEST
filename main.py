@@ -14,36 +14,43 @@ print("주식 데이터 분석 시작...")
 
 for ticker in TICKERS:
     try:
-        # 주봉(Weekly) 데이터 최근 1년치 다운로드
+        # 200주 이평선을 계산하려면 최소 4년 이상의 데이터가 필요하므로 5년(5y)치 다운로드
         stock = yf.Ticker(ticker)
-        df = stock.history(period="1y", interval="1wk")
+        df = stock.history(period="5y", interval="1wk")
         
-        # 30주(약 7~8개월) 데이터가 안 되면 패스
-        if len(df) < 35:
+        # 200주 데이터가 안 되면 패스 (상장된 지 4년이 안 된 종목 등)
+        if len(df) < 200:
             continue
             
-        # 30주 이동평균선 계산
+        # 5주, 30주, 200주 이동평균선 계산
+        df['MA5'] = df['Close'].rolling(window=5).mean()
         df['MA30'] = df['Close'].rolling(window=30).mean()
+        df['MA200'] = df['Close'].rolling(window=200).mean()
         
-        # 전주 종가 및 이평선 데이터 시프트(이동)
-        df['Prev_Close'] = df['Close'].shift(1)
-        df['Prev_MA30'] = df['MA30'].shift(1)
+        # 가장 최근 주(이번 주)의 데이터 추출
+        latest = df.iloc[-1]
         
-        # 상향 돌파 조건: (전주 종가 <= 전주 MA30) AND (이번주 종가 > 이번주 MA30)
-        df['Breakout'] = (df['Prev_Close'] <= df['Prev_MA30']) & (df['Close'] > df['MA30'])
+        current_price = latest['Close']
+        ma5 = latest['MA5']
+        ma30 = latest['MA30']
+        ma200 = latest['MA200']
         
-        # 최근 4주 데이터 내에 돌파가 발생한 적이 있는지 확인 (벡터화 연산)
-        recent_4weeks = df.tail(4)
-        if recent_4weeks['Breakout'].any():
+        # 조건 1: 5주, 30주, 200주 이평선 정배열 (MA5 > MA30 > MA200)
+        is_aligned = (ma5 > ma30) and (ma30 > ma200)
+        
+        # 조건 2: 5주와 200주 이평선의 간격이 현재가의 50% 이하
+        # (정배열 상태이므로 ma5가 ma200보다 무조건 크기 때문에 절댓값 처리는 생략 가능)
+        is_gap_valid = (ma5 - ma200) <= (current_price * 0.5)
+        
+        if is_aligned and is_gap_valid:
             selected_stocks.append(ticker)
             
     except Exception as e:
         print(f"{ticker} 분석 중 오류 발생: {e}")
 
 # 2. 이메일 발송 로직
-# 요청하신 변수명으로 수정 (EMAIL_USER, EMAIL_PASS)
 EMAIL_USER = os.environ.get("EMAIL_USER")
-EMAIL_PASS = os.environ.get("EMAIL_PASS") # 구글 앱 비밀번호
+EMAIL_PASS = os.environ.get("EMAIL_PASS")
 EMAIL_RECEIVER = "dueoghks@gmail.com"
 
 # 환경변수 누락 확인
@@ -51,9 +58,9 @@ if not EMAIL_USER or not EMAIL_PASS:
     print("경고: 환경변수(EMAIL_USER, EMAIL_PASS)가 설정되지 않았습니다.")
 
 if selected_stocks:
-    body = f"<h3>최근 4주 내 30주봉 돌파 종목 리스트</h3><p>{', '.join(selected_stocks)}</p>"
+    body = f"<h3>정배열 및 이격도 조건 충족 종목 리스트</h3><p>{', '.join(selected_stocks)}</p>"
 else:
-    body = "<h3>최근 4주 내 30주봉을 돌파한 종목이 없습니다.</h3>"
+    body = "<h3>조건을 충족하는 종목이 없습니다.</h3>"
 
 msg = MIMEMultipart()
 msg['From'] = str(EMAIL_USER)
