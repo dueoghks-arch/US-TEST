@@ -6,22 +6,34 @@ import datetime
 import yfinance as yf
 import pandas as pd
 import time
+import requests # 새로 추가된 모듈
+
+# 위키피디아 크롤링 차단(403 Forbidden) 방지용 사용자 에이전트 설정
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+}
 
 # 1. S&P 500, 나스닥 100, S&P 400 티커 리스트 실시간 수집 및 병합
 print("각 지수별 전 종목 리스트를 가져오는 중...")
 ticker_set = set()
 
 try:
-    ticker_set.update(pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")[0]['Symbol'].tolist())
+    # S&P 500
+    html_500 = requests.get("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies", headers=headers).text
+    ticker_set.update(pd.read_html(html_500)[0]['Symbol'].tolist())
     
-    nasdaq_tables = pd.read_html("https://en.wikipedia.org/wiki/Nasdaq-100")
+    # Nasdaq 100
+    html_ndx = requests.get("https://en.wikipedia.org/wiki/Nasdaq-100", headers=headers).text
+    nasdaq_tables = pd.read_html(html_ndx)
     for t in nasdaq_tables:
         col = [c for c in t.columns if c in ['Ticker', 'Symbol']]
         if col:
             ticker_set.update(t[col[0]].tolist())
             break
             
-    df_400 = pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_400_companies")[0]
+    # S&P MidCap 400
+    html_400 = requests.get("https://en.wikipedia.org/wiki/List_of_S%26P_400_companies", headers=headers).text
+    df_400 = pd.read_html(html_400)[0]
     col_400 = [c for c in df_400.columns if 'Ticker' in c or 'Symbol' in c][0]
     ticker_set.update(df_400[col_400].tolist())
 except Exception as e:
@@ -29,6 +41,11 @@ except Exception as e:
 
 TICKERS = [str(t).replace('.', '-').strip() for t in ticker_set if pd.notna(t)]
 print(f"➔ 중복 제거 후 총 {len(TICKERS)}개 종목 수집 완료.")
+
+# 티커 수집 실패 시 방어 로직 (No objects to concatenate 에러 방지)
+if len(TICKERS) == 0:
+    print("수집된 티커가 없어 분석을 종료합니다.")
+    exit()
 
 # 2. 통째로 한번에 다운로드 (서버 차단 방지 및 속도 극대화)
 print("모든 종목의 5년치 주봉 데이터 일괄 다운로드 중 (잠시만 기다려주세요)...")
@@ -40,24 +57,20 @@ selected_stocks = []
 # 3. 개별 종목 조건 검사 시행
 for ticker in TICKERS:
     try:
-        # 안전한 데이터 추출 방식 적용 (KeyError 발생 시 자연스럽게 패스)
         df = all_data[ticker].dropna(subset=['Close'])
         
-        # 최소 100주 이상의 데이터도 없으면 상장한 지 너무 안 된 것이므로 패스
         if len(df) < 100:
             continue
             
-        # 기본 이평선 계산
         df['MA5'] = df['Close'].rolling(window=5).mean()
         df['MA30'] = df['Close'].rolling(window=30).mean()
         df['MA100'] = df['Close'].rolling(window=100).mean()
         
-        # 200주 데이터 존재 여부에 따른 동적 분기
         if len(df) >= 200:
             df['MA_LONG'] = df['Close'].rolling(window=200).mean()
             used_ma_name = "200주"
         else:
-            df['MA_LONG'] = df['MA100']  # 200주가 없으면 100주로 대체
+            df['MA_LONG'] = df['MA100']
             used_ma_name = "100주(대체)"
             
         latest = df.iloc[-1]
@@ -66,10 +79,7 @@ for ticker in TICKERS:
         ma30 = latest['MA30']
         ma_long = latest['MA_LONG']
         
-        # 조건 1: 정배열 (5주 > 30주 > 장기이평선)
         is_aligned = (ma5 > ma30) and (ma30 > ma_long)
-        
-        # 조건 2: 5주와 장기이평선 간격이 현재가의 50% 이하
         is_gap_valid = (ma5 - ma_long) <= (current_price * 0.5)
         
         if is_aligned and is_gap_valid:
@@ -79,10 +89,9 @@ for ticker in TICKERS:
             })
             
     except KeyError:
-        # yf.download 결과에 해당 티커 데이터가 없는 경우
         pass
     except Exception as e:
-        pass # 기타 연산 중 에러 발생 시 부드럽게 패스
+        pass 
 
 # 4. 조건을 만족한 정예 종목에 대해서만 시총/종목명 전수 조사
 print(f"조건 충족 종목 {len(selected_stocks)}개 발견. 상세 정보 수집 중...")
@@ -113,10 +122,8 @@ for item in selected_stocks:
             'market_cap_str': market_cap_str,
             'ma_type': item['ma_type']
         })
-        # info API 연속 호출로 인한 일시적 차단 방지
         time.sleep(0.2)
     except Exception:
-        # 만약 info에서 에러가 나면 기본 정보로 채워서 표에 포함시킴
         final_list.append({
             'ticker': ticker,
             'name': ticker,
@@ -131,7 +138,6 @@ EMAIL_PASS = os.environ.get("EMAIL_PASS")
 EMAIL_RECEIVER = "dueoghks@gmail.com"
 
 if final_list:
-    # 시가총액 내림차순 정렬
     final_list.sort(key=lambda x: x['market_cap'], reverse=True)
     
     table_rows = ""
