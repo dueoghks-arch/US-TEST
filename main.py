@@ -6,7 +6,7 @@ import datetime
 import yfinance as yf
 import pandas as pd
 import time
-import requests # 새로 추가된 모듈
+import requests
 
 # 위키피디아 크롤링 차단(403 Forbidden) 방지용 사용자 에이전트 설정
 headers = {
@@ -79,10 +79,15 @@ for ticker in TICKERS:
         ma30 = latest['MA30']
         ma_long = latest['MA_LONG']
         
+        # [조건 1] 정배열 (5주 > 30주 > 장기이평선)
         is_aligned = (ma5 > ma30) and (ma30 > ma_long)
-        is_gap_valid = (ma5 - ma_long) <= (current_price * 0.1)
         
-        if is_aligned and is_gap_valid:
+        # [조건 2] 각 이평선 간의 간격이 현재가의 10% 이하인지 확인 (초압축 상태)
+        gap_5_30 = (ma5 - ma30) <= (current_price * 0.1)
+        gap_30_long = (ma30 - ma_long) <= (current_price * 0.1)
+        gap_total = (ma5 - ma_long) <= (current_price * 0.1)
+        
+        if is_aligned and gap_5_30 and gap_30_long and gap_total:
             selected_stocks.append({
                 'ticker': ticker,
                 'ma_type': used_ma_name
@@ -157,7 +162,7 @@ if final_list:
         </h3>
         <p style="font-size: 13px; color: #666666; margin-bottom: 15px;">
             <strong>조사 대상:</strong> S&P 500, 나스닥 100, S&P MidCap 400 전 종목 (차단 방지 로직 적용)<br>
-            <strong>선별 조건:</strong> 5주 > 30주 > 장기이평선(200주 또는 100주) 정배열 & 5주와 장기이평선 간격이 현재가의 50% 이하
+            <strong>선별 조건:</strong> 5주 > 30주 > 장기이평선(200주 또는 100주) 정배열 & 각 이평선 간격이 현재가의 10% 이하로 초압축된 종목
         </p>
         
         <table style="border-collapse: collapse; width: 100%; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 14px;">
@@ -178,17 +183,17 @@ if final_list:
     </div>
     """
 else:
-    body = "<h3>조건을 충족하는 종목이 해당 지수 내에 없습니다.</h3>"
+    body = "<h3>조건을 충족하는 종목이 해당 지수 내에 없습니다 (초압축 정배열 조건 미달).</h3>"
 
 msg = MIMEMultipart()
 msg['From'] = str(EMAIL_USER)
 msg['To'] = EMAIL_RECEIVER
-msg['Subject'] = f"[{datetime.date.today()}] 주요 지수 통합 대량 선별 알림"
+msg['Subject'] = f"[{datetime.date.today()}] 초압축 정배열 선별 주식 알림"
 msg.attach(MIMEText(body, 'html'))
 
 try:
     if not EMAIL_USER or not EMAIL_PASS:
-        raise ValueError("환경변수 설정 오류")
+        raise ValueError("환경변수 설정 오류: EMAIL_USER 또는 EMAIL_PASS가 설정되지 않았습니다.")
     server = smtplib.SMTP('smtp.gmail.com', 587)
     server.starttls()
     server.login(EMAIL_USER, EMAIL_PASS)
