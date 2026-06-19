@@ -80,7 +80,7 @@ for ticker in TICKERS:
         ma_long = latest['MA_LONG']
         
         is_aligned = (ma5 > ma30) and (ma30 > ma_long)
-        is_gap_valid = (ma5 - ma_long) <= (current_price * 0.5)
+        is_gap_valid = (ma5 - ma_long) <= (current_price * 0.1)
         
         if is_aligned and is_gap_valid:
             selected_stocks.append({
