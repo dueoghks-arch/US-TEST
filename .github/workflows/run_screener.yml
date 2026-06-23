@@ -3,7 +3,7 @@ name: Stock Screener Bot
 on:
   schedule:
     # 매주 토요일 00:00 UTC (한국 시간 토요일 오전 9시)
-    - cron: '28 03 * * *'
+    - cron: '28 05 * * *'
   workflow_dispatch: # 수동 실행 버튼 활성화
 
 jobs:
